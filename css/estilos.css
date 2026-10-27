@@ -1,0 +1,160 @@
+/* Estilos de la página, el visor ocupa toda la pantalla y lo demás va encima */
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+  background: #e3e8ed;
+}
+
+#visor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* capa de las cotas, no recibe clics para que estos lleguen al canvas */
+#etiquetas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.cota {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #c9d1d9;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+
+.cota-nodo {
+  position: absolute;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  color: #5b6b7a;
+  transform: translate(8px, -18px);
+}
+
+.cota-accesorio {
+  color: #0b7fa6;
+  border-color: #0b7fa6;
+  font-size: 10px;
+}
+
+#indicador {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  background: white;
+  border: 1px solid #c9d1d9;
+  padding: 6px 10px;
+}
+
+#botones {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+#botones button {
+  padding: 5px 9px;
+  border: 1px solid #c9d1d9;
+  background: white;
+  cursor: pointer;
+}
+
+#botones button:hover {
+  background: #dcf0f7;
+}
+
+/* botón activo (por ejemplo Cotas encendido) */
+#botones button.activo {
+  background: #0b7fa6;
+  color: white;
+}
+
+#ayuda {
+  position: absolute;
+  left: 10px;
+  bottom: 80px;
+  background: white;
+  border: 1px solid #c9d1d9;
+  padding: 10px 14px;
+  font-size: 12px;
+}
+
+#ayuda td {
+  padding: 1px 14px 1px 0;
+}
+
+#ayuda td:first-child {
+  font-family: Consolas, monospace;
+  white-space: nowrap;
+}
+
+.oculto {
+  display: none;
+}
+
+#barra {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: white;
+  border-top: 1px solid #c9d1d9;
+}
+
+#barra span {
+  font-family: Consolas, monospace;
+  color: #0b7fa6;
+}
+
+#comando {
+  flex: 1;
+  font-family: Consolas, monospace;
+  font-size: 14px;
+  padding: 6px 8px;
+  border: 1px solid #c9d1d9;
+}
+
+#mensaje {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  padding: 3px 10px;
+  box-sizing: border-box;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: #5b6b7a;
+  background: white;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#mensaje.error {
+  color: #b42318;
+}
+
+#mensaje.ok {
+  color: #0b7fa6;
+}

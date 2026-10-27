@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modelador de Ductos</title>
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+  <!-- Contenedor principal, aquí Three.js agrega el canvas donde se dibuja la red -->
+  <div id="visor"></div>
+
+  <!-- Capa donde se ponen las cotas (textos) encima del canvas -->
+  <div id="etiquetas"></div>
+
+  <!-- Indicador de lo que está seleccionado (esquina superior izquierda) -->
+  <div id="indicador">Sin selección</div>
+
+  <!-- Botones de vistas (esquina superior derecha) -->
+  <div id="botones">
+    <button id="btnIso">Iso</button>
+    <button id="btnPlanta">Planta</button>
+    <button id="btnElevacion">Elevación</button>
+    <button id="btnCotas">Cotas</button>
+    <button id="btnAyuda">Ayuda</button>
+  </div>
+
+  <!-- Lista de comandos, parte oculta y se muestra con el botón Ayuda o escribiendo ayuda -->
+  <div id="ayuda" class="oculto">
+    <b>COMANDOS</b>
+    <table>
+      <tr><td>+X 3 600x400</td><td>Tramo desde el nodo seleccionado: dirección, largo [m] y sección [mm]</td></tr>
+      <tr><td>-Y 0.6 D315</td><td>Tramo circular. Direcciones: +X -X +Y -Y +Z -Z (+Y sube, -Y baja)</td></tr>
+      <tr><td>+Z 2</td><td>Si no se escribe la sección se repite la del tramo anterior</td></tr>
+      <tr><td>der 2.5</td><td>Con un tramo seleccionado, crea un punto de derivación a 2,5 m de su inicio</td></tr>
+      <tr><td>acc CR 0.7</td><td>Accesorio en el tramo: CR compuerta, CCF cortafuego, SIL silenciador, FIL filtro, VAV caja VAV</td></tr>
+      <tr><td>term difusor</td><td>Terminal en un nodo extremo: difusor, rejilla, tapa, uma, ninguno</td></tr>
+      <tr><td>sel N3 / sel T2</td><td>Selecciona un nodo o un tramo (también se puede con clic)</td></tr>
+      <tr><td>borrar</td><td>Borra el tramo seleccionado y todo lo que cuelga de él (también tecla Supr)</td></tr>
+      <tr><td>deshacer</td><td>Deshace la última acción (también Ctrl+Z)</td></tr>
+      <tr><td>ejemplo / nuevo</td><td>Carga la red de ejemplo o parte con una red vacía</td></tr>
+    </table>
+  </div>
+
+  <!-- Barra de comandos (abajo) -->
+  <div id="barra">
+    <span>&gt;</span>
+    <input id="comando" type="text" autocomplete="off" spellcheck="false"
+           placeholder="+X 3 600x400   (escribe ayuda para ver los comandos)">
+  </div>
+  <div id="mensaje"></div>
+
+  <!-- Librería Three.js versión r128 y los controles de cámara orbital -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Archivos del proyecto, el orden importa porque cada uno usa funciones de los anteriores -->
+  <script src="js/datos.js"></script>
+  <script src="js/geometria.js"></script>
+  <script src="js/escena.js"></script>
+  <script src="js/comandos.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
