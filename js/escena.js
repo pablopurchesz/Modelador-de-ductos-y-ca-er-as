@@ -16,12 +16,20 @@ var capaEtiquetas = document.getElementById("etiquetas");
 var escena = new THREE.Scene();
 escena.background = new THREE.Color(0xe3e8ed);
 
+// En esta versión el visor no ocupa toda la ventana, ya que, a la izquierda se
+// encuentra el panel lateral, es por esto que el tamaño se toma del contenedor
+// y no de window.innerWidth y window.innerHeight como en la versión anterior.
+var anchoVisor = contenedor.clientWidth;
+var altoVisor = contenedor.clientHeight;
+
 // cámara en perspectiva: ángulo de visión 42°, y los planos cercano y lejano
-var camara = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.05, 600);
+var camara = new THREE.PerspectiveCamera(42, anchoVisor / altoVisor, 0.05, 600);
 
 var renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(window.innerWidth, window.innerHeight);
+// en pantallas de alta densidad se limita a 2 la cantidad de píxeles por punto,
+// con el fin de no dibujar más píxeles de los que se alcanzan a notar
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(anchoVisor, altoVisor);
 contenedor.appendChild(renderer.domElement);
 
 // controles para girar la cámara alrededor de la red (OrbitControls)
@@ -57,6 +65,12 @@ var marcadoresNodos = [];
 var cotas = [];
 var mostrarCotas = true;
 
+// Red activa: es el id del equipo de origen de la red con la que se está
+// trabajando, o null si se trabaja con todas las redes a la vez. Las redes que
+// no están activas se dibujan transparentes y no se pueden seleccionar.
+var redActiva = null;
+var nodosActivos = {};   // nodosActivos["N3"] = true si N3 es parte de la red activa
+
 
 // ---------------------------------------------------------------------------
 // Funciones auxiliares
@@ -72,6 +86,62 @@ function hacerSeleccionable(objeto, tipo, id) {
       mallasSeleccionables.push(hijo);
     }
   });
+}
+
+// Cambia todos los materiales de un objeto por los transparentes, se usa para
+// las piezas de las redes que no están activas
+function pintarInactivo(objeto) {
+  objeto.traverse(function (hijo) {
+    if (hijo.isMesh) {
+      hijo.material = materiales.inactivo;
+    } else if (hijo.isLine) {
+      hijo.material = materialLineasInactivo;
+    }
+  });
+}
+
+// Dice si un nodo es parte de la red activa (si no hay red activa, todos lo son)
+function estaActivo(idNodo) {
+  if (redActiva == null) {
+    return true;
+  }
+  return nodosActivos[idNodo] == true;
+}
+
+// Agrega una pieza al modelo. Si es de la red activa queda seleccionable, si
+// no lo es se pinta transparente y no se agrega a la lista de seleccionables.
+function agregarAlModelo(objeto, tipo, id, activo) {
+  if (activo) {
+    hacerSeleccionable(objeto, tipo, id);
+  } else {
+    pintarInactivo(objeto);
+  }
+  grupoRed.add(objeto);
+}
+
+// Revisa que la red activa siga existiendo (por ejemplo después de deshacer) y
+// arma la lista de nodos que le pertenecen
+function prepararRedActiva() {
+  if (redActiva != null && (red.nodos[redActiva] == undefined || !red.nodos[redActiva].origen)) {
+    redActiva = null;
+  }
+  nodosActivos = {};
+  if (redActiva != null) {
+    var lista = nodosConectados(redActiva, null);
+    for (var i = 0; i < lista.length; i++) {
+      nodosActivos[lista[i]] = true;
+    }
+  }
+  // si lo seleccionado quedó en una red inactiva se quita la selección
+  if (seleccion != null) {
+    var idNodoSel = seleccion.id;
+    if (seleccion.tipo == "tramo") {
+      idNodoSel = red.tramos[seleccion.id].a;
+    }
+    if (!estaActivo(idNodoSel)) {
+      seleccion = null;
+    }
+  }
 }
 
 // Agrega una cota a la lista (se dibuja después en dibujarCotas)
@@ -106,6 +176,8 @@ function limpiarEscena() {
 // descontando lo que ocupan los fittings, y finalmente los accesorios y cotas.
 function reconstruirEscena() {
   limpiarEscena();
+  quitarSeleccionSiNoExiste();   // está en panel.js
+  prepararRedActiva();
 
   var nodoSeleccionado = null;
   var tramoSeleccionado = null;
@@ -120,6 +192,7 @@ function reconstruirEscena() {
   for (var i = 0; i < idsNodos.length; i++) {
     var nodo = red.nodos[idsNodos[i]];
     var punto = posicionNodo(nodo.id);
+    var activo = estaActivo(nodo.id);
 
     // se arma la lista de conexiones del nodo
     var tramos = tramosDelNodo(nodo.id);
@@ -138,49 +211,60 @@ function reconstruirEscena() {
       material = materiales.seleccionado;
     }
 
-    if (conexiones.length == 2) {
+    if (nodo.origen && conexiones.length <= 1) {
+      // equipo de origen de la red (UMA o caja de ventilación)
+      var conexionEquipo = null;
+      if (conexiones.length == 1) {
+        conexionEquipo = conexiones[0];
+      }
+      var equipo = crearEquipo(nodo, conexionEquipo);
+      agregarAlModelo(equipo.grupo, "nodo", nodo.id, activo);
+      if (activo) {
+        var nombreCorto = "UMA";
+        if (nodo.terminal == "ventilador") {
+          nombreCorto = "Caja de ventilación";
+        }
+        agregarCota(nombreCorto + " " + nodo.id, equipo.puntoEtiqueta, "cota cota-accesorio");
+      }
+    } else if (conexiones.length == 2) {
       // producto punto entre las dos direcciones: -1 si son opuestas (línea recta)
       var punto2 = conexiones[0].sale.dot(conexiones[1].sale);
       if (punto2 < -0.99) {
         // en línea recta: si cambia la sección va una transición, si no, nada
         if (!mismaSeccion(conexiones[0].tramo, conexiones[1].tramo)) {
           var transicion = crearTransicion(punto, conexiones[0], conexiones[1], material);
-          hacerSeleccionable(transicion.malla, "nodo", nodo.id);
-          grupoRed.add(transicion.malla);
+          agregarAlModelo(transicion.malla, "nodo", nodo.id, activo);
           recortes[conexiones[0].tramo.id + "|" + nodo.id] = transicion.recorte;
           recortes[conexiones[1].tramo.id + "|" + nodo.id] = transicion.recorte;
         }
       } else {
         // si no son opuestas forman un codo
         var codo = crearCodo(punto, conexiones[0], conexiones[1], material);
-        hacerSeleccionable(codo.malla, "nodo", nodo.id);
-        grupoRed.add(codo.malla);
+        agregarAlModelo(codo.malla, "nodo", nodo.id, activo);
         recortes[conexiones[0].tramo.id + "|" + nodo.id] = codo.recorte;
         recortes[conexiones[1].tramo.id + "|" + nodo.id] = codo.recorte;
       }
     } else if (conexiones.length >= 3) {
       // tres o más tramos: derivación
-      var derivacion = crearDerivacion(punto, conexiones, material);
-      hacerSeleccionable(derivacion.malla, "nodo", nodo.id);
-      grupoRed.add(derivacion.malla);
+      var derivacion = crearDerivacion(punto, nodo.id, conexiones, material);
+      agregarAlModelo(derivacion.malla, "nodo", nodo.id, activo);
       for (var k = 0; k < conexiones.length; k++) {
         recortes[conexiones[k].tramo.id + "|" + nodo.id] = derivacion.recortes[k];
       }
     } else if (conexiones.length == 1 && nodo.terminal != null) {
       // nodo extremo con terminal
       var terminal = crearTerminal(nodo, conexiones[0]);
-      hacerSeleccionable(terminal, "nodo", nodo.id);
-      grupoRed.add(terminal);
-      if (nodo.terminal == "uma") {
-        var posUma = punto.clone().addScaledVector(conexiones[0].sale, -1.0);
-        posUma.y = posUma.y + 1.0;
-        agregarCota("UMA", posUma, "cota cota-accesorio");
-      }
+      agregarAlModelo(terminal, "nodo", nodo.id, activo);
+    }
+
+    // los nodos de las redes inactivas no llevan marcador ni cota
+    if (!activo) {
+      continue;
     }
 
     // marcador del nodo: una esfera pequeña, naranja si es un extremo abierto
     var materialMarcador = materiales.nodo;
-    if (conexiones.length == 1 && nodo.terminal == null) {
+    if (conexiones.length == 1 && nodo.terminal == null && !nodo.origen) {
       materialMarcador = materiales.nodoAbierto;
     }
     var radio = 0.075;
@@ -208,10 +292,13 @@ function reconstruirEscena() {
     if (tramo.id == tramoSeleccionado) {
       materialTramo = materiales.seleccionado;
     }
+    var tramoActivo = estaActivo(tramo.a);
     var recto = crearTramoRecto(tramo, recorteA, recorteB, materialTramo);
     if (recto != null) {
-      hacerSeleccionable(recto, "tramo", tramo.id);
-      grupoRed.add(recto);
+      agregarAlModelo(recto, "tramo", tramo.id, tramoActivo);
+    }
+    if (!tramoActivo) {
+      continue;   // sin cota
     }
 
     // cota con la sección y el largo, un poco por encima del tramo
@@ -241,9 +328,12 @@ function reconstruirEscena() {
     if (!red.tramos[acc.tramo]) {
       continue;
     }
+    var accActivo = estaActivo(red.tramos[acc.tramo].a);
     var grupoAcc = crearAccesorio(acc);
-    hacerSeleccionable(grupoAcc, "tramo", acc.tramo);
-    grupoRed.add(grupoAcc);
+    agregarAlModelo(grupoAcc, "tramo", acc.tramo, accActivo);
+    if (!accActivo) {
+      continue;   // sin cota
+    }
 
     var perfilAcc = perfilTramo(red.tramos[acc.tramo]);
     var altoAcc = perfilAcc.alto;
@@ -253,7 +343,7 @@ function reconstruirEscena() {
   }
 
   crearElementosCotas();
-  actualizarIndicador();     // está en comandos.js
+  actualizarPanel();         // está en panel.js
   guardarEnNavegador();      // está en datos.js
 }
 
@@ -352,9 +442,14 @@ renderer.domElement.addEventListener("pointerup", function (evento) {
   );
   raycaster.setFromCamera(mouse, camara);
 
-  // primero se prueban los marcadores de nodos (son chicos) y después las demás mallas
+  // primero se prueban los marcadores de nodos (son chicos), luego si hay una
+  // vista previa de tramo el clic sirve para crearlo (trazado.js), y si no
+  // se prueban las demás mallas
   var toques = raycaster.intersectObjects(marcadoresNodos, false);
   if (toques.length == 0) {
+    if (clicParaTrazar()) {
+      return;
+    }
     toques = raycaster.intersectObjects(mallasSeleccionables, false);
   }
 
@@ -363,11 +458,11 @@ renderer.domElement.addEventListener("pointerup", function (evento) {
   } else {
     seleccionar(null);
   }
-  document.getElementById("comando").focus();   // para seguir escribiendo altiro
 });
 
 // Selecciona un elemento (o nada si es null) y vuelve a dibujar
 function seleccionar(elemento) {
+  creandoEquipo = false;   // si se estaba creando un equipo, se cancela (está en panel.js)
   if (elemento == null) {
     seleccion = null;
   } else {
@@ -404,9 +499,11 @@ function seleccionar(elemento) {
 // Ajuste al cambiar el tamaño de la ventana y bucle de dibujo
 // ---------------------------------------------------------------------------
 window.addEventListener("resize", function () {
-  camara.aspect = window.innerWidth / window.innerHeight;
+  anchoVisor = contenedor.clientWidth;
+  altoVisor = contenedor.clientHeight;
+  camara.aspect = anchoVisor / altoVisor;
   camara.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(anchoVisor, altoVisor);
 });
 
 // Esta función se repite en cada cuadro (unas 60 veces por segundo)
@@ -415,4 +512,5 @@ function animar() {
   controles.update();
   renderer.render(escena, camara);
   dibujarCotas();
+  dibujarCotaPrevia();   // está en trazado.js
 }

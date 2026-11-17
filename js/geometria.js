@@ -19,6 +19,11 @@ var materiales = {
   seleccionado: new THREE.MeshStandardMaterial({ color: 0x2fa8d0, metalness: 0.2,  roughness: 0.45, side: THREE.DoubleSide, emissive: 0x0b4a60, emissiveIntensity: 0.35 }),
   terminal:     new THREE.MeshStandardMaterial({ color: 0xf2f4f6, metalness: 0.1,  roughness: 0.6 }),
   uma:          new THREE.MeshStandardMaterial({ color: 0x8796a3, metalness: 0.25, roughness: 0.6 }),
+  umaClaro:     new THREE.MeshStandardMaterial({ color: 0xa3b0bb, metalness: 0.25, roughness: 0.6 }),
+  lona:         new THREE.MeshStandardMaterial({ color: 0x3d4650, metalness: 0.0,  roughness: 0.95 }),
+  // material de las redes que no están activas: transparente y sin escribir profundidad
+  // para que no tapen a la red activa
+  inactivo:     new THREE.MeshStandardMaterial({ color: 0xbac4cd, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }),
   nodo:         new THREE.MeshBasicMaterial({ color: 0x4a5a69, depthTest: false, transparent: true }),
   nodoAbierto:  new THREE.MeshBasicMaterial({ color: 0xe08a1e, depthTest: false, transparent: true }),
   nodoSelecc:   new THREE.MeshBasicMaterial({ color: 0x18a6d6, depthTest: false, transparent: true })
@@ -34,6 +39,7 @@ for (var i = 0; i < codigosAcc.length; i++) {
 // material de las líneas de borde y de las líneas de difusores y rejillas
 var materialBordes = new THREE.LineBasicMaterial({ color: 0x34485a, transparent: true, opacity: 0.45 });
 var materialLineas = new THREE.LineBasicMaterial({ color: 0x6b7a88 });
+var materialLineasInactivo = new THREE.LineBasicMaterial({ color: 0x6b7a88, transparent: true, opacity: 0.12 });
 
 // Agrega las aristas (bordes) a una malla para que se vea más como un dibujo técnico
 function agregarBordes(malla) {
@@ -269,48 +275,263 @@ function crearCodo(puntoNodo, c1, c2, material) {
 
 
 // ---------------------------------------------------------------------------
-// Transición (cambio de sección en línea recta)
+// Pieza recta
 // ---------------------------------------------------------------------------
-function crearTransicion(puntoNodo, c1, c2, material) {
-  var a = c1.sale.clone().negate();
-  var n = c1.perfil.u.clone();
+// Crea una caja (ducto rectangular) o un cilindro (ducto circular) con el
+// perfil de un tramo, centrada en el punto "centro" y con el largo indicado.
+// Se usa para el cuerpo de las derivaciones y para las tapas del troncal.
+function crearPiezaRecta(perfil, centro, largo, material) {
+  var malla;
+  if (perfil.forma == "rect") {
+    malla = new THREE.Mesh(new THREE.BoxGeometry(perfil.ancho, perfil.alto, largo), material);
+  } else {
+    var cilindro = new THREE.CylinderGeometry(perfil.diametro / 2, perfil.diametro / 2, largo, 36);
+    cilindro.rotateX(Math.PI / 2);   // se acuesta el cilindro en el eje z, igual que en los tramos
+    malla = new THREE.Mesh(cilindro, material);
+  }
+  malla.position.copy(centro);
+  malla.quaternion.copy(rotacionDesdeBase(perfil.u, perfil.v, perfil.d));
+  agregarBordes(malla);
+  return malla;
+}
+
+
+// ---------------------------------------------------------------------------
+// Reducción o ampliación
+// ---------------------------------------------------------------------------
+// Pieza que pasa de la sección perfil1 a la sección perfil2 avanzando en la
+// dirección "a", partiendo en el punto "inicio" y con el largo indicado. Se
+// arma con anillos igual que el codo, pero los anillos van en línea recta y el
+// radio de cada uno se mezcla entre la sección de entrada y la de salida.
+var LARGO_REDUCCION = 0.30;   // las reducciones y ampliaciones miden 30 cm
+
+function crearReduccion(inicio, a, perfil1, perfil2, largo, material) {
+  var n = perfil1.u.clone();
   var w = new THREE.Vector3().crossVectors(n, a);
 
-  // el largo depende de cuánto cambia la sección (mínimo 0,25 m)
-  var diferencia = Math.max(
-    Math.abs(medidaEnEje(c1.perfil, n) - medidaEnEje(c2.perfil, n)),
-    Math.abs(medidaEnEje(c1.perfil, w) - medidaEnEje(c2.perfil, w))
-  );
-  var largo = Math.max(0.25, diferencia * 1.4);
-  largo = Math.min(largo, 0.9 * c1.largo, 0.9 * c2.largo);
-
-  var esquinas = angulosEsquinas(c1.perfil, n, w).concat(angulosEsquinas(c2.perfil, n, w));
+  var esquinas = angulosEsquinas(perfil1, n, w).concat(angulosEsquinas(perfil2, n, w));
   var angulos = listaAngulos(esquinas);
 
   var anillos = [];
   var pasos = 6;
   for (var i = 0; i <= pasos; i++) {
-    var t = i / pasos;
-    var centro = puntoNodo.clone().addScaledVector(a, -largo / 2 + t * largo);
+    var t = i / pasos;   // va de 0 (sección 1) a 1 (sección 2)
+    var centro = inicio.clone().addScaledVector(a, t * largo);
     var anillo = [];
     for (var j = 0; j < angulos.length; j++) {
       var dir = n.clone().multiplyScalar(Math.cos(angulos[j])).addScaledVector(w, Math.sin(angulos[j]));
-      var r1 = radioEnDireccion(c1.perfil, dir);
-      var r2 = radioEnDireccion(c2.perfil, dir);
+      var r1 = radioEnDireccion(perfil1, dir);
+      var r2 = radioEnDireccion(perfil2, dir);
       anillo.push(centro.clone().addScaledVector(dir, r1 + (r2 - r1) * t));
     }
     anillos.push(anillo);
   }
-  return { malla: crearMallaDesdeAnillos(anillos, material), recorte: largo / 2 };
+  return crearMallaDesdeAnillos(anillos, material);
+}
+
+// Transición en un nodo con dos tramos en línea recta y distinta sección.
+// La reducción (o ampliación) de 30 cm queda centrada en el nodo, sin embargo,
+// si alguno de los tramos es muy corto se achica para que no se pase del tramo.
+function crearTransicion(puntoNodo, c1, c2, material) {
+  var a = c1.sale.clone().negate();   // dirección que va desde c1 hacia c2
+  var largo = Math.min(LARGO_REDUCCION, 0.9 * c1.largo, 0.9 * c2.largo);
+  var inicio = puntoNodo.clone().addScaledVector(a, -largo / 2);
+  var malla = crearReduccion(inicio, a, c1.perfil, c2.perfil, largo, material);
+  return { malla: malla, recorte: largo / 2 };
+}
+
+
+// ---------------------------------------------------------------------------
+// Zapato chino y collarín (salida de un ramal desde el troncal)
+// ---------------------------------------------------------------------------
+// El zapato chino es la pieza con la que un ramal rectangular sale del troncal.
+// Su boca sobre el troncal es más larga que el ramal hacia aguas arriba y ese
+// lado queda inclinado a 45°, con el objeto de que el aire entre al ramal de
+// forma más suave. El alargue es 1/4 del ancho del ramal medido en la dirección
+// del troncal, con un mínimo de 100 mm, y como el lado va a 45° el zapato
+// tiene de alto lo mismo que el alargue.
+var ALARGUE_MINIMO_ZAPATO = 0.10;   // 100 mm
+var LARGO_COLLARIN = 0.10;          // el collarín circular mide 100 mm
+
+function alargueZapato(anchoEnTroncal) {
+  return Math.max(anchoEnTroncal / 4, ALARGUE_MINIMO_ZAPATO);
+}
+
+// Crea una malla de 6 caras a partir de 8 puntos. Los puntos 0 a 3 son la cara
+// de abajo y los puntos 4 a 7 la cara de arriba, ambas en el mismo orden.
+function crearPiezaDe8Puntos(p, material) {
+  var caras = [
+    [0, 1, 2, 3],   // abajo
+    [4, 5, 6, 7],   // arriba
+    [0, 1, 5, 4],
+    [1, 2, 6, 5],
+    [2, 3, 7, 6],
+    [3, 0, 4, 7]
+  ];
+  // cada cara de 4 puntos se divide en dos triángulos
+  var posiciones = [];
+  for (var i = 0; i < caras.length; i++) {
+    var c = caras[i];
+    var triangulos = [c[0], c[1], c[2], c[0], c[2], c[3]];
+    for (var j = 0; j < triangulos.length; j++) {
+      var punto = p[triangulos[j]];
+      posiciones.push(punto.x, punto.y, punto.z);
+    }
+  }
+  var geometria = new THREE.BufferGeometry();
+  geometria.setAttribute("position", new THREE.Float32BufferAttribute(posiciones, 3));
+  geometria.computeVertexNormals();
+  return new THREE.Mesh(geometria, material);
+}
+
+// a: dirección del aire en el troncal, perfilTroncal: perfil del troncal en el
+// nodo, conexion: la conexión del ramal { tramo, sale, perfil, largo }.
+// Devuelve la malla y el recorte del ramal, es decir, desde el eje del troncal
+// hasta donde termina el zapato o el collarín.
+function crearSalidaRamal(puntoNodo, a, perfilTroncal, conexion, material) {
+  var b = conexion.sale.clone();                          // hacia donde sale el ramal
+  var c = new THREE.Vector3().crossVectors(a, b);         // tercer eje, perpendicular a los dos
+  c.normalize();
+  var mitadTroncal = radioEnDireccion(perfilTroncal, b);  // del eje del troncal a su pared
+
+  // función auxiliar: punto a partir de cuánto se avanza en cada eje
+  function punto(enA, enB, enC) {
+    return puntoNodo.clone().addScaledVector(a, enA).addScaledVector(b, enB).addScaledVector(c, enC);
+  }
+
+  if (conexion.tramo.forma == "circ") {
+    // collarín: un cuello circular corto pegado a la pared del troncal
+    var radio = conexion.perfil.diametro / 2;
+    var geometria = new THREE.CylinderGeometry(radio, radio, LARGO_COLLARIN, 36, 1, true);
+    var collarin = new THREE.Mesh(geometria, material);
+    collarin.position.copy(punto(0, mitadTroncal + LARGO_COLLARIN / 2, 0));
+    // el cilindro de Three.js viene en el eje y, se gira para que apunte hacia b
+    collarin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b);
+    agregarBordes(collarin);
+    return { malla: collarin, recorte: mitadTroncal + LARGO_COLLARIN };
+  }
+
+  // zapato chino para ramal rectangular
+  var anchoEnA = medidaEnEje(conexion.perfil, a);   // medida del ramal en la dirección del troncal
+  var anchoEnC = medidaEnEje(conexion.perfil, c);   // la otra medida del ramal
+  var alargue = alargueZapato(anchoEnA);
+  var base = mitadTroncal;                           // la base va sobre la pared del troncal
+  var tope = mitadTroncal + alargue;                 // el tope se une con el ramal
+
+  var puntos = [
+    // base sobre el troncal, alargada hacia aguas arriba (lado negativo de a)
+    punto(-anchoEnA / 2 - alargue, base, -anchoEnC / 2),
+    punto(anchoEnA / 2, base, -anchoEnC / 2),
+    punto(anchoEnA / 2, base, anchoEnC / 2),
+    punto(-anchoEnA / 2 - alargue, base, anchoEnC / 2),
+    // tope con la medida del ramal
+    punto(-anchoEnA / 2, tope, -anchoEnC / 2),
+    punto(anchoEnA / 2, tope, -anchoEnC / 2),
+    punto(anchoEnA / 2, tope, anchoEnC / 2),
+    punto(-anchoEnA / 2, tope, anchoEnC / 2)
+  ];
+  var zapato = crearPiezaDe8Puntos(puntos, material);
+  agregarBordes(zapato);
+  return { malla: zapato, recorte: tope };
 }
 
 
 // ---------------------------------------------------------------------------
 // Derivación
 // ---------------------------------------------------------------------------
-// Se dibuja como una caja que envuelve todas las secciones que llegan al nodo.
-// Devuelve la malla y el recorte de cada conexión (en el mismo orden).
-function crearDerivacion(puntoNodo, conexiones, material) {
+// La derivación se arma de la siguiente forma:
+//  - El troncal pasa por el nodo con la sección del tramo de entrada, mediante
+//    un cuerpo recto que se alarga lo suficiente para que quepan los zapatos.
+//  - Si el troncal sigue en línea recta con otra sección, después del cuerpo se
+//    pone una reducción (o ampliación) de 30 cm, es decir, la reducción va
+//    aguas abajo de los ramales.
+//  - Si el troncal no sigue en línea recta, el cuerpo termina en una tapa y
+//    todos los tramos que salen son ramales con zapato chino hacia ambos lados.
+//  - Cada ramal sale con zapato chino si es rectangular o con collarín si es circular.
+// Devuelve un grupo con todas las piezas y el recorte de cada conexión.
+function crearDerivacion(puntoNodo, idNodo, conexiones, material) {
+  var analisis = analizarDerivacion(idNodo);   // está en datos.js
+  if (analisis == null) {
+    return crearCajaDerivacion(puntoNodo, conexiones, material);
+  }
+
+  // se busca cuál de las conexiones es la entrada y cuál es la recta
+  var entrada = null;
+  var recta = null;
+  for (var i = 0; i < conexiones.length; i++) {
+    if (conexiones[i].tramo.id == analisis.entrada.id) {
+      entrada = conexiones[i];
+    }
+    if (analisis.recto != null && conexiones[i].tramo.id == analisis.recto.id) {
+      recta = conexiones[i];
+    }
+  }
+
+  var a = entrada.sale.clone().negate();   // dirección del aire en el troncal
+  var perfilTroncal = entrada.perfil;
+  var grupo = new THREE.Group();
+  var recortes = [];
+  for (var r = 0; r < conexiones.length; r++) {
+    recortes.push(0);
+  }
+
+  // cuánto debe medir el cuerpo hacia aguas arriba y hacia aguas abajo del nodo
+  // para que entren los ramales, se deja una holgura de 5 cm por lado
+  var haciaArriba = 0.05;
+  var haciaAbajo = 0.05;
+  for (var j = 0; j < conexiones.length; j++) {
+    var con = conexiones[j];
+    if (con == entrada || con == recta) {
+      continue;
+    }
+    var anchoEnA = medidaEnEje(con.perfil, a);
+    var extra = 0;
+    if (con.tramo.forma == "rect") {
+      extra = alargueZapato(anchoEnA);
+    }
+    haciaArriba = Math.max(haciaArriba, anchoEnA / 2 + extra + 0.05);
+    haciaAbajo = Math.max(haciaAbajo, anchoEnA / 2 + 0.05);
+  }
+  haciaArriba = Math.min(haciaArriba, 0.9 * entrada.largo);
+
+  // cuerpo recto del troncal
+  var centroCuerpo = puntoNodo.clone().addScaledVector(a, (haciaAbajo - haciaArriba) / 2);
+  grupo.add(crearPiezaRecta(perfilTroncal, centroCuerpo, haciaArriba + haciaAbajo, material));
+  recortes[conexiones.indexOf(entrada)] = haciaArriba;
+
+  if (recta != null) {
+    if (mismaSeccion(entrada.tramo, recta.tramo)) {
+      recortes[conexiones.indexOf(recta)] = haciaAbajo;
+    } else {
+      // reducción o ampliación de 30 cm después de los ramales
+      var largoReduccion = Math.min(LARGO_REDUCCION, 0.9 * (recta.largo - haciaAbajo));
+      var inicioReduccion = puntoNodo.clone().addScaledVector(a, haciaAbajo);
+      grupo.add(crearReduccion(inicioReduccion, a, perfilTroncal, recta.perfil, largoReduccion, material));
+      recortes[conexiones.indexOf(recta)] = haciaAbajo + largoReduccion;
+    }
+  } else {
+    // el troncal termina en el nodo, por lo que se cierra con una tapa
+    var centroTapa = puntoNodo.clone().addScaledVector(a, haciaAbajo + 0.01);
+    grupo.add(crearPiezaRecta(perfilTroncal, centroTapa, 0.02, materiales.pestana));
+  }
+
+  // salidas de los ramales
+  for (var k = 0; k < conexiones.length; k++) {
+    if (conexiones[k] == entrada || conexiones[k] == recta) {
+      continue;
+    }
+    var salida = crearSalidaRamal(puntoNodo, a, perfilTroncal, conexiones[k], material);
+    grupo.add(salida.malla);
+    recortes[k] = Math.min(salida.recorte, 0.9 * conexiones[k].largo);
+  }
+
+  return { malla: grupo, recortes: recortes };
+}
+
+// Caja que envuelve todas las secciones que llegan al nodo. Se usa solo cuando
+// no se puede saber cuál es la entrada, es decir, cuando la derivación está en
+// el mismo nodo de la UMA.
+function crearCajaDerivacion(puntoNodo, conexiones, material) {
   var ejes = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
   var tamano = [0, 0, 0];
   var hayTramoEnEje = [false, false, false];
@@ -356,7 +577,8 @@ function crearDerivacion(puntoNodo, conexiones, material) {
 // ---------------------------------------------------------------------------
 // recorteA y recorteB son los pedazos que ocupan los fittings en cada extremo,
 // el tramo se dibuja solo en la parte que queda libre entre ellos.
-// Devuelve un grupo con el ducto y sus pestañas (uniones) en cada punta.
+// Devuelve un grupo con el ducto. Las pestañas que antes se dibujaban en cada
+// punta se quitaron, ya que, recargaban el dibujo en las uniones sin aportar información.
 function crearTramoRecto(tramo, recorteA, recorteB, material) {
   var perfil = perfilTramo(tramo);
   var largo = largoTramo(tramo) - recorteA - recorteB;
@@ -380,20 +602,6 @@ function crearTramoRecto(tramo, recorteA, recorteB, material) {
   agregarBordes(cuerpo);
   grupo.add(cuerpo);
 
-  // pestañas en cada extremo
-  var extremos = [-largo / 2, largo / 2];
-  for (var i = 0; i < extremos.length; i++) {
-    var pestana;
-    if (tramo.forma == "rect") {
-      pestana = new THREE.Mesh(new THREE.BoxGeometry(perfil.ancho + 0.05, perfil.alto + 0.05, 0.025), materiales.pestana);
-    } else {
-      var disco = new THREE.CylinderGeometry(perfil.diametro / 2 + 0.025, perfil.diametro / 2 + 0.025, 0.025, 36);
-      disco.rotateX(Math.PI / 2);
-      pestana = new THREE.Mesh(disco, materiales.pestana);
-    }
-    pestana.position.z = extremos[i];
-    grupo.add(pestana);
-  }
   return grupo;
 }
 
@@ -446,12 +654,6 @@ function crearAccesorio(accesorio) {
     piezas.push(cuerpoAccesorio(esCircular, ancho + 0.2, alto + 0.2, 0.9, material));
   } else if (accesorio.tipo == "FIL") {
     piezas.push(cuerpoAccesorio(esCircular, ancho + 0.12, alto + 0.12, 0.18, material));
-  } else if (accesorio.tipo == "VAV") {
-    // la caja VAV siempre es rectangular y tiene un controlador al costado
-    piezas.push(cuerpoAccesorio(false, ancho + 0.3, alto + 0.12, 0.7, material));
-    var controlador = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.25), materiales.terminal);
-    controlador.position.set(ancho / 2 + 0.21, 0, 0);
-    piezas.push(controlador);
   }
 
   for (var i = 0; i < piezas.length; i++) {
@@ -519,17 +721,6 @@ function crearTerminal(nodo, conexion) {
     var tapa = cuerpoAccesorio(tramo.forma == "circ", ancho + 0.02, alto + 0.02, 0.02, materiales.pestana);
     tapa.position.z = signo * 0.01;
     piezas.push(tapa);
-  } else if (nodo.terminal == "uma") {
-    // caja grande con un disco que representa el ventilador
-    var medida = Math.max(ancho, alto);
-    var caja = new THREE.Mesh(new THREE.BoxGeometry(medida + 0.9, medida + 0.7, 2.0), materiales.uma);
-    caja.position.z = signo * 1.0;
-    piezas.push(caja);
-    var disco = new THREE.CylinderGeometry(medida * 0.45, medida * 0.45, 0.02, 40);
-    disco.rotateX(Math.PI / 2);
-    var ventilador = new THREE.Mesh(disco, materiales.pestana);
-    ventilador.position.z = signo * 2.01;
-    grupo.add(ventilador);
   }
 
   for (var j = 0; j < piezas.length; j++) {
@@ -538,4 +729,160 @@ function crearTerminal(nodo, conexion) {
     grupo.add(piezas[j]);
   }
   return grupo;
+}
+
+
+// ---------------------------------------------------------------------------
+// Equipos de origen: UMA y caja de ventilación
+// ---------------------------------------------------------------------------
+// Los equipos se dibujan "detrás" del nodo de origen, es decir, hacia el lado
+// contrario de donde sale el ducto. Entre el equipo y el ducto se ponen dos
+// piezas, tal como se instala en terreno:
+//  - una transición de 30 cm que pasa de la sección del ducto a la boca de descarga
+//  - una junta flexible de lona de 15 cm, la cual evita que las vibraciones
+//    del ventilador se transmitan a los ductos
+// Para ubicar cada pieza se mide la distancia "s" desde el nodo hacia atrás.
+var LARGO_JUNTA_FLEXIBLE = 0.15;
+
+// Arma un perfil rectangular con las medidas indicadas (en metros) usando los
+// mismos ejes u, v, d de otro perfil, así las piezas quedan alineadas con el ducto
+function perfilRectangular(perfilBase, ancho, alto) {
+  return {
+    forma: "rect",
+    ancho: ancho,
+    alto: alto,
+    diametro: 0,
+    u: perfilBase.u,
+    v: perfilBase.v,
+    d: perfilBase.d
+  };
+}
+
+// Dibuja el contorno de un rectángulo con líneas, sirve para las puertas de
+// registro de los equipos. ejeA y ejeB son las dos direcciones del rectángulo.
+function lineasRectangulo(centro, ejeA, ejeB, mitadA, mitadB) {
+  var esquinas = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]];
+  var puntos = [];
+  for (var i = 0; i < esquinas.length; i++) {
+    var p = centro.clone();
+    p.addScaledVector(ejeA, esquinas[i][0] * mitadA);
+    p.addScaledVector(ejeB, esquinas[i][1] * mitadB);
+    puntos.push(p);
+  }
+  return new THREE.Line(new THREE.BufferGeometry().setFromPoints(puntos), materialLineas);
+}
+
+// nodo: el nodo de origen, conexion: el ducto que sale del equipo o null si
+// todavía no se ha trazado ninguno (en ese caso el equipo mira hacia +X).
+// Devuelve el grupo con todas las piezas y el punto donde va la etiqueta.
+function crearEquipo(nodo, conexion) {
+  var puntoNodo = posicionNodo(nodo.id);
+  var perfil;
+  var sale;
+  if (conexion != null) {
+    perfil = conexion.perfil;
+    sale = conexion.sale.clone();
+  } else {
+    // perfil de referencia de 600x400 hacia +X, con los ejes armados igual que en perfilTramo()
+    sale = new THREE.Vector3(1, 0, 0);
+    perfil = {
+      forma: "rect", ancho: 0.6, alto: 0.4, diametro: 0,
+      u: new THREE.Vector3(0, 0, -1),
+      v: new THREE.Vector3(0, 1, 0),
+      d: new THREE.Vector3(1, 0, 0)
+    };
+  }
+  var atras = sale.clone().negate();   // dirección hacia donde está el equipo
+
+  // medidas del ducto en metros (si es circular se usa el diámetro en ambos sentidos)
+  var anchoDucto = perfil.ancho;
+  var altoDucto = perfil.alto;
+  if (perfil.forma == "circ") {
+    anchoDucto = perfil.diametro;
+    altoDucto = perfil.diametro;
+  }
+
+  // boca de descarga del equipo, 20 cm más grande que el ducto
+  var perfilBoca = perfilRectangular(perfil, anchoDucto + 0.2, altoDucto + 0.2);
+
+  // función auxiliar: punto a una distancia s detrás del nodo
+  function puntoAtras(s) {
+    return puntoNodo.clone().addScaledVector(atras, s);
+  }
+
+  var grupo = new THREE.Group();
+
+  // 1) transición de 30 cm desde el ducto hasta la boca
+  grupo.add(crearReduccion(puntoNodo, atras, perfil, perfilBoca, LARGO_REDUCCION, materiales.fitting));
+
+  // 2) junta flexible de lona
+  var sJunta = LARGO_REDUCCION;
+  var perfilJunta = perfilRectangular(perfil, perfilBoca.ancho + 0.02, perfilBoca.alto + 0.02);
+  grupo.add(crearPiezaRecta(perfilJunta, puntoAtras(sJunta + LARGO_JUNTA_FLEXIBLE / 2), LARGO_JUNTA_FLEXIBLE, materiales.lona));
+
+  // 3) el equipo propiamente tal parte después de la junta
+  var sEquipo = sJunta + LARGO_JUNTA_FLEXIBLE;
+  var largoTotal = 0;
+
+  if (nodo.terminal == "ventilador") {
+    // Caja de ventilación: caja cúbica con la descarga al frente, una boca de
+    // aspiración circular atrás y una puerta de registro en el costado
+    var lado = Math.max(Math.max(perfilBoca.ancho, perfilBoca.alto) + 0.6, 0.8);
+    var perfilCaja = perfilRectangular(perfil, lado, lado);
+    grupo.add(crearPiezaRecta(perfilCaja, puntoAtras(sEquipo + lado / 2), lado, materiales.uma));
+
+    // boca de aspiración: cuello circular corto en la cara de atrás
+    var radioAsp = lado * 0.32;
+    var cuello = new THREE.Mesh(new THREE.CylinderGeometry(radioAsp, radioAsp, 0.15, 36, 1, true), materiales.fitting);
+    cuello.position.copy(puntoAtras(sEquipo + lado + 0.075));
+    cuello.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), atras);
+    agregarBordes(cuello);
+    grupo.add(cuello);
+
+    // puerta de registro en el costado (lado +u de la caja)
+    var centroPuerta = puntoAtras(sEquipo + lado / 2).addScaledVector(perfil.u, lado / 2 + 0.003);
+    grupo.add(lineasRectangulo(centroPuerta, atras, perfil.v, lado * 0.32, lado * 0.36));
+
+    largoTotal = sEquipo + lado + 0.15;
+  } else {
+    // UMA: gabinete armado por módulos, desde la descarga hacia atrás:
+    // ventilador, serpentín, filtro y caja de mezcla (toma de aire)
+    var anchoGab = Math.max(perfilBoca.ancho + 0.5, 1.2);
+    var altoGab = Math.max(perfilBoca.alto + 0.5, 1.2);
+    var perfilGab = perfilRectangular(perfil, anchoGab, altoGab);
+    var modulos = [
+      { nombre: "ventilador", largo: 1.0, material: materiales.uma },
+      { nombre: "serpentin",  largo: 0.6, material: materiales.umaClaro },
+      { nombre: "filtro",     largo: 0.5, material: materiales.uma },
+      { nombre: "mezcla",     largo: 0.7, material: materiales.umaClaro }
+    ];
+
+    var s = sEquipo;
+    for (var i = 0; i < modulos.length; i++) {
+      var m = modulos[i];
+      var centroModulo = puntoAtras(s + m.largo / 2);
+      grupo.add(crearPiezaRecta(perfilGab, centroModulo, m.largo, m.material));
+
+      // puerta de registro de cada módulo en el costado (lado +u)
+      var centroRegistro = centroModulo.clone().addScaledVector(perfil.u, anchoGab / 2 + 0.003);
+      grupo.add(lineasRectangulo(centroRegistro, atras, perfil.v, m.largo * 0.38, altoGab * 0.4));
+      s = s + m.largo;
+    }
+
+    // persianas de la toma de aire en la cara de atrás: líneas horizontales
+    var centroToma = puntoAtras(s + 0.003);
+    var lineas = [];
+    for (var y = -altoGab * 0.4; y <= altoGab * 0.4; y = y + 0.08) {
+      lineas.push(centroToma.clone().addScaledVector(perfil.v, y).addScaledVector(perfil.u, -anchoGab * 0.42));
+      lineas.push(centroToma.clone().addScaledVector(perfil.v, y).addScaledVector(perfil.u, anchoGab * 0.42));
+    }
+    grupo.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lineas), materialLineas));
+
+    largoTotal = s;
+  }
+
+  // la etiqueta se pone sobre el centro del equipo
+  var puntoEtiqueta = puntoAtras((sEquipo + largoTotal) / 2);
+  puntoEtiqueta.y = puntoEtiqueta.y + 1.0;
+  return { grupo: grupo, puntoEtiqueta: puntoEtiqueta };
 }

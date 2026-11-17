@@ -1,19 +1,407 @@
-/* Estilos de la página, el visor ocupa toda la pantalla y lo demás va encima */
+/* ==========================================================================
+   estilos.css
+   La página tiene dos columnas, a la izquierda el panel de trabajo
+   (formularios) y a la derecha el visor 3D, el cual ocupa todo el espacio que
+   queda. Los colores se dejan como variables para cambiarlos en un solo lugar.
+   ========================================================================== */
+
+:root {
+  --fondo: #eef1f4;
+  --superficie: #ffffff;
+  --texto: #17212b;
+  --texto-suave: #5b6b7a;
+  --linea: #d3dae1;
+  --acento: #0b7fa6;
+  --acento-suave: #dcf0f7;
+  --peligro: #b42318;
+  --fondo-escena: #e3e8ed;
+
+  --letra-titulo: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --letra-texto: "IBM Plex Sans", Arial, sans-serif;
+  --letra-numeros: "IBM Plex Mono", Consolas, monospace;
+}
 
 html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  font-family: Arial, sans-serif;
-  background: #e3e8ed;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: var(--letra-texto);
+  font-size: 14px;
 }
 
-#visor {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+/* grilla de dos columnas: 350 px para el panel y el resto para el visor */
+#aplicacion {
+  display: grid;
+  grid-template-columns: 350px 1fr;
   height: 100%;
+}
+
+
+/* --------------------------------------------------------------------------
+   Panel lateral
+   -------------------------------------------------------------------------- */
+#panel {
+  overflow-y: auto;          /* si el contenido no cabe aparece una barra de desplazamiento */
+  border-right: 1px solid var(--linea);
+  padding: 16px 16px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+#marca {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#marca h1 {
+  font-family: var(--letra-titulo);
+  font-weight: 700;
+  font-size: 24px;
+  text-transform: uppercase;
+  margin: 0;
+  line-height: 1;
+}
+
+#marca p {
+  margin: 3px 0 0 0;
+  color: var(--texto-suave);
+  font-size: 12px;
+}
+
+#contexto {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+h2 {
+  font-family: var(--letra-titulo);
+  font-weight: 600;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0;
+  color: var(--texto-suave);
+}
+
+/* cada bloque del panel es una tarjeta blanca */
+.bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.encabezado {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.encabezado strong {
+  font-family: var(--letra-numeros);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.etiqueta {
+  font-family: var(--letra-titulo);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--acento-suave);
+  color: var(--acento);
+}
+
+.dato {
+  color: var(--texto-suave);
+  font-size: 12.5px;
+  font-family: var(--letra-numeros);
+}
+
+.nota {
+  margin: 0;
+  color: var(--texto-suave);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* botones Rectangular / Circular */
+.selector-forma {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--linea);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.selector-forma button {
+  border: 0;
+  background: transparent;
+  padding: 7px;
+  font: 500 13px var(--letra-texto);
+  cursor: pointer;
+}
+
+.selector-forma button.activo {
+  background: var(--acento);
+  color: white;
+}
+
+/* campos de medidas en tres columnas */
+.campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--texto-suave);
+  text-transform: uppercase;
+  min-width: 0;
+}
+
+input, select {
+  font: 500 14px var(--letra-numeros);
+  color: var(--texto);
+  background: var(--fondo);
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  padding: 6px 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+select {
+  font-family: var(--letra-texto);
+  font-weight: 400;
+}
+
+/* fila con un campo y un botón al lado */
+.fila {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+
+.fila label {
+  flex: 1;
+}
+
+.boton {
+  border: 1px solid var(--linea);
+  background: var(--superficie);
+  border-radius: 5px;
+  padding: 7px 11px;
+  font: 500 13px var(--letra-texto);
+  cursor: pointer;
+}
+
+.boton:hover {
+  border-color: var(--acento);
+}
+
+.boton.principal {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: white;
+}
+
+.boton.peligro {
+  color: var(--peligro);
+  border-color: #e3b7b3;
+}
+
+/* botonera de direcciones de 3 x 3 */
+.direcciones {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.boton-direccion {
+  padding: 9px 4px;
+  font: 500 13px var(--letra-numeros);
+  border: 1px solid var(--linea);
+  border-radius: 5px;
+  background: var(--fondo);
+  cursor: pointer;
+}
+
+.boton-direccion:hover:enabled {
+  background: var(--acento);
+  color: white;
+  border-color: var(--acento);
+}
+
+/* dirección que se está mostrando como vista previa en el visor */
+.boton-direccion.previa {
+  background: var(--acento-suave);
+  border-color: var(--acento);
+  color: var(--acento);
+}
+
+/* las direcciones ocupadas se ven tachadas y no se pueden apretar */
+.boton-direccion:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.direcciones .centro {
+  display: grid;
+  place-items: center;
+  font: 500 12px var(--letra-numeros);
+  color: var(--texto-suave);
+  border: 1px dashed var(--linea);
+  border-radius: 5px;
+}
+
+/* lista de accesorios del tramo */
+.lista-accesorios {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lista-accesorios li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 5px 8px;
+  background: var(--fondo);
+  border-radius: 4px;
+}
+
+.lista-accesorios .posicion {
+  margin-left: auto;
+  font-family: var(--letra-numeros);
+  color: var(--texto-suave);
+  font-size: 12px;
+}
+
+.lista-accesorios button {
+  border: 0;
+  background: transparent;
+  color: var(--texto-suave);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.lista-accesorios button:hover {
+  color: var(--peligro);
+}
+
+/* cuadrado de color de cada accesorio */
+.muestra {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+#mensaje {
+  margin: 0;
+  font-size: 12.5px;
+  min-height: 1.4em;
+  color: var(--texto-suave);
+}
+
+#mensaje.error {
+  color: var(--peligro);
+}
+
+#mensaje.ok {
+  color: var(--acento);
+}
+
+
+/* --------------------------------------------------------------------------
+   Visor 3D
+   -------------------------------------------------------------------------- */
+/* position relative para que lo que va encima (botones, cotas, leyenda) se
+   ubique respecto al visor y no respecto a toda la página */
+#visor {
+  position: relative;
+  overflow: hidden;
+  background: var(--fondo-escena);
+  min-width: 0;
+}
+
+#visor canvas {
+  display: block;
+}
+
+#botones {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  z-index: 2;
+}
+
+#botones .grupo {
+  display: flex;
+  border: 1px solid var(--linea);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--superficie);
+}
+
+#botones button {
+  border: 0;
+  border-right: 1px solid var(--linea);
+  background: transparent;
+  padding: 6px 10px;
+  font: 500 12.5px var(--letra-texto);
+  cursor: pointer;
+}
+
+#botones button:last-child {
+  border-right: 0;
+}
+
+#botones button:hover {
+  background: var(--acento-suave);
+}
+
+/* selector de red activa dentro de la barra */
+#botones select {
+  border: 0;
+  border-radius: 0;
+  width: auto;
+  padding: 6px 8px;
+  font: 500 12.5px var(--letra-texto);
+  background: transparent;
+  cursor: pointer;
+}
+
+#botones button.activo {
+  background: var(--acento);
+  color: white;
 }
 
 /* capa de las cotas, no recibe clics para que estos lleguen al canvas */
@@ -25,136 +413,59 @@ html, body {
   height: 100%;
   pointer-events: none;
   overflow: hidden;
+  z-index: 1;
 }
 
 .cota {
   position: absolute;
   transform: translate(-50%, -50%);
-  font-family: Consolas, monospace;
-  font-size: 11px;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid #c9d1d9;
-  padding: 1px 4px;
+  font: 500 11px var(--letra-numeros);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--linea);
+  border-radius: 3px;
+  padding: 1px 5px;
   white-space: nowrap;
 }
 
 .cota-nodo {
   position: absolute;
-  font-family: Consolas, monospace;
-  font-size: 10px;
-  color: #5b6b7a;
+  font: 500 10px var(--letra-numeros);
+  color: var(--texto-suave);
   transform: translate(8px, -18px);
 }
 
 .cota-accesorio {
-  color: #0b7fa6;
-  border-color: #0b7fa6;
+  color: var(--acento);
+  border-color: var(--acento);
   font-size: 10px;
 }
 
-#indicador {
+#ayuda-mouse, #leyenda {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  font-family: Consolas, monospace;
-  font-size: 13px;
-  background: white;
-  border: 1px solid #c9d1d9;
-  padding: 6px 10px;
-}
-
-#botones {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-}
-
-#botones button {
-  padding: 5px 9px;
-  border: 1px solid #c9d1d9;
-  background: white;
-  cursor: pointer;
-}
-
-#botones button:hover {
-  background: #dcf0f7;
-}
-
-/* botón activo (por ejemplo Cotas encendido) */
-#botones button.activo {
-  background: #0b7fa6;
-  color: white;
-}
-
-#ayuda {
-  position: absolute;
-  left: 10px;
-  bottom: 80px;
-  background: white;
-  border: 1px solid #c9d1d9;
-  padding: 10px 14px;
+  bottom: 12px;
   font-size: 12px;
+  color: var(--texto-suave);
+  background: rgba(255, 255, 255, 0.85);
+  padding: 6px 9px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2;
 }
 
-#ayuda td {
-  padding: 1px 14px 1px 0;
+#ayuda-mouse {
+  left: 12px;
 }
 
-#ayuda td:first-child {
-  font-family: Consolas, monospace;
-  white-space: nowrap;
+#leyenda {
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
 }
 
-.oculto {
-  display: none;
-}
-
-#barra {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 22px;
+#leyenda span {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: white;
-  border-top: 1px solid #c9d1d9;
-}
-
-#barra span {
-  font-family: Consolas, monospace;
-  color: #0b7fa6;
-}
-
-#comando {
-  flex: 1;
-  font-family: Consolas, monospace;
-  font-size: 14px;
-  padding: 6px 8px;
-  border: 1px solid #c9d1d9;
-}
-
-#mensaje {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 22px;
-  padding: 3px 10px;
-  box-sizing: border-box;
-  font-family: Consolas, monospace;
-  font-size: 12px;
-  color: #5b6b7a;
-  background: white;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-#mensaje.error {
-  color: #b42318;
-}
-
-#mensaje.ok {
-  color: #0b7fa6;
+  gap: 6px;
 }

@@ -33,21 +33,29 @@ var NOMBRE_DIRECCION = {
   "-Z": "-Z"
 };
 
-// Accesorios que se pueden poner sobre un tramo, el código es el que se escribe en el comando acc
+// Accesorios que se pueden poner sobre un tramo, el código es el que se guarda en cada accesorio.
+// La caja VAV se quitó de la lista, ya que, la regulación de caudal se hace con
+// compuertas de regulación (templadores).
 var ACCESORIOS = {
   CR:  { nombre: "Compuerta de regulación", color: 0xd39a1f },
   CCF: { nombre: "Compuerta cortafuego",    color: 0xc4362b },
   SIL: { nombre: "Silenciador",             color: 0x6c7883 },
-  FIL: { nombre: "Filtro",                  color: 0x7d9a5a },
-  VAV: { nombre: "Caja VAV",                color: 0x5b7fb0 }
+  FIL: { nombre: "Filtro",                  color: 0x7d9a5a }
 };
 
 // Terminales que se pueden poner en los extremos de la red
 var TERMINALES = {
   difusor: "Difusor de techo 4 vías",
   rejilla: "Rejilla de retorno",
-  tapa:    "Tapa ciega",
-  uma:     "UMA / ventilador"
+  tapa:    "Tapa ciega"
+};
+
+// Equipos que pueden ser el origen de una red. Cada red tiene un solo equipo y
+// es el nodo desde donde se empieza a trazar, por lo que estos ya no se
+// mezclan con los terminales de los extremos.
+var EQUIPOS = {
+  uma:        "Unidad manejadora de aire (UMA)",
+  ventilador: "Caja de ventilación"
 };
 
 // Nombre con el que se guarda la red en el navegador (localStorage)
@@ -88,6 +96,7 @@ function crearRedVacia() {
   };
   var idUma = crearNodo(0, 2.8, 0);   // la red parte a 2,8 m de altura
   red.nodos[idUma].terminal = "uma";
+  red.nodos[idUma].origen = true;
 }
 
 // Crea un nodo en la posición indicada (en metros) y devuelve su id
@@ -99,14 +108,92 @@ function crearNodo(x, y, z) {
     x: x,
     y: y,     // la coordenada y es la cota del nodo
     z: z,
-    terminal: null
+    terminal: null,   // en un extremo es el terminal y en un origen es el tipo de equipo
+    origen: false     // true si el nodo es el equipo (UMA o caja de ventilación) de una red
   };
   return id;
 }
 
-// El primer nodo de la red es siempre la UMA (raíz de la red)
+// ---------------------------------------------------------------------------
+// Varias redes en el mismo modelo
+// ---------------------------------------------------------------------------
+// El modelo puede tener varias redes independientes, cada una con su propio
+// equipo de origen. Las redes no se guardan por separado, sino que una red es
+// simplemente el conjunto de nodos que están unidos por tramos, es por esto
+// que para saber a qué red pertenece un nodo se recorren los tramos desde ese
+// nodo (con nodosConectados) hasta encontrar el nodo que tiene origen = true.
+
+// Devuelve el id del primer equipo del modelo
 function idNodoRaiz() {
-  return Object.keys(red.nodos)[0];
+  var origenes = listaDeOrigenes();
+  if (origenes.length == 0) {
+    return Object.keys(red.nodos)[0];
+  }
+  return origenes[0];
+}
+
+// Devuelve los ids de todos los nodos que son equipo de origen
+function listaDeOrigenes() {
+  var lista = [];
+  var ids = Object.keys(red.nodos);
+  for (var i = 0; i < ids.length; i++) {
+    if (red.nodos[ids[i]].origen) {
+      lista.push(ids[i]);
+    }
+  }
+  return lista;
+}
+
+// Devuelve el id del equipo de la red a la que pertenece un nodo
+function origenDeNodo(idNodo) {
+  var nodosDeLaRed = nodosConectados(idNodo, null);
+  for (var i = 0; i < nodosDeLaRed.length; i++) {
+    if (red.nodos[nodosDeLaRed[i]].origen) {
+      return nodosDeLaRed[i];
+    }
+  }
+  return null;
+}
+
+// Crea un equipo nuevo (origen de una red nueva) en la posición indicada en metros.
+// Se revisa que no quede encima de otro nodo, ya que, no se podrían diferenciar.
+function crearEquipoNuevo(tipo, x, y, z) {
+  var ids = Object.keys(red.nodos);
+  for (var i = 0; i < ids.length; i++) {
+    var n = red.nodos[ids[i]];
+    var distancia = Math.sqrt((n.x - x) * (n.x - x) + (n.y - y) * (n.y - y) + (n.z - z) * (n.z - z));
+    if (distancia < 0.5) {
+      throw new Error("Ya existe el nodo " + n.id + " a menos de 0,5 m de esa posición.");
+    }
+  }
+  var id = crearNodo(redondear(x), redondear(y), redondear(z));
+  red.nodos[id].terminal = tipo;
+  red.nodos[id].origen = true;
+  return id;
+}
+
+// Borra un equipo junto con toda su red (nodos, tramos y accesorios)
+function eliminarRedCompleta(idOrigen) {
+  if (listaDeOrigenes().length <= 1) {
+    throw new Error("El modelo debe tener al menos un equipo.");
+  }
+  var nodosDeLaRed = nodosConectados(idOrigen, null);
+  for (var i = 0; i < nodosDeLaRed.length; i++) {
+    delete red.nodos[nodosDeLaRed[i]];
+  }
+  var idsTramos = Object.keys(red.tramos);
+  for (var j = 0; j < idsTramos.length; j++) {
+    var t = red.tramos[idsTramos[j]];
+    if (!red.nodos[t.a] || !red.nodos[t.b]) {
+      delete red.tramos[t.id];
+    }
+  }
+  var idsAcc = Object.keys(red.accesorios);
+  for (var k = 0; k < idsAcc.length; k++) {
+    if (!red.tramos[red.accesorios[idsAcc[k]].tramo]) {
+      delete red.accesorios[idsAcc[k]];
+    }
+  }
 }
 
 
@@ -234,6 +321,11 @@ function agregarTramo(idNodoInicio, codigo, seccion, largo) {
 
   // Primeramente se revisa que no exista otro tramo saliendo en la misma dirección
   var tramosExistentes = tramosDelNodo(idNodoInicio);
+
+  // del equipo sale un solo ducto de descarga, las derivaciones se hacen después
+  if (red.nodos[idNodoInicio].origen && tramosExistentes.length >= 1) {
+    throw new Error("Del equipo " + idNodoInicio + " sale un solo ducto, las derivaciones se hacen más adelante en la red.");
+  }
   for (var i = 0; i < tramosExistentes.length; i++) {
     var sale = direccionSaliendo(tramosExistentes[i], idNodoInicio);
     if (sale.dot(direccion) > 0.99) {
@@ -271,8 +363,8 @@ function agregarTramo(idNodoInicio, codigo, seccion, largo) {
   };
 
   // si el nodo de inicio tenía un terminal se le quita, porque ya no es extremo,
-  // salvo la UMA que se mantiene ya que es el origen de la red
-  if (red.nodos[idNodoInicio].terminal != "uma") {
+  // salvo en el equipo de origen, donde terminal guarda el tipo de equipo
+  if (!red.nodos[idNodoInicio].origen) {
     red.nodos[idNodoInicio].terminal = null;
   }
 
@@ -365,15 +457,15 @@ function dividirTramo(idTramo, distancia) {
   return idNodoMedio;
 }
 
-// Borra un tramo junto con todo lo que cuelga de él (nunca el lado de la UMA).
+// Borra un tramo junto con todo lo que cuelga de él (nunca el lado del equipo).
 // Devuelve el id del nodo que queda, para dejarlo seleccionado.
 function borrarTramo(idTramo) {
   var tramo = red.tramos[idTramo];
   var nodosABorrar = nodosConectados(tramo.b, idTramo);
   var nodoQueQueda = tramo.a;
 
-  // si por el lado b está la UMA entonces se borra el otro lado
-  if (nodosABorrar.indexOf(idNodoRaiz()) != -1) {
+  // si por el lado b está el equipo de la red entonces se borra el otro lado
+  if (nodosABorrar.indexOf(origenDeNodo(tramo.a)) != -1) {
     nodosABorrar = nodosConectados(tramo.a, idTramo);
     nodoQueQueda = tramo.b;
   }
@@ -434,6 +526,37 @@ function guardarEnNavegador() {
   }
 }
 
+// Una red guardada con una versión anterior puede tener accesorios que ya no
+// existen en la lista ACCESORIOS (por ejemplo cajas VAV), por lo que se quitan
+// al cargar, de lo contrario el programa no sabría cómo dibujarlos
+function quitarAccesoriosDesconocidos() {
+  var idsAcc = Object.keys(red.accesorios);
+  for (var i = 0; i < idsAcc.length; i++) {
+    var acc = red.accesorios[idsAcc[i]];
+    if (ACCESORIOS[acc.tipo] == undefined) {
+      delete red.accesorios[acc.id];
+    }
+  }
+}
+
+// En las versiones anteriores no existía la propiedad origen, ya que, la UMA
+// era siempre el primer nodo, por lo que al cargar una red antigua se marca el
+// primer nodo como origen y se quitan las "uma" que hubieran quedado como terminal
+function marcarOrigenesAntiguos() {
+  if (listaDeOrigenes().length > 0) {
+    return;
+  }
+  var ids = Object.keys(red.nodos);
+  for (var i = 0; i < ids.length; i++) {
+    red.nodos[ids[i]].origen = false;
+    if (red.nodos[ids[i]].terminal == "uma") {
+      red.nodos[ids[i]].terminal = null;
+    }
+  }
+  red.nodos[ids[0]].origen = true;
+  red.nodos[ids[0]].terminal = "uma";
+}
+
 // Intenta cargar la red guardada, devuelve true si lo logra
 function cargarDesdeNavegador() {
   try {
@@ -442,6 +565,8 @@ function cargarDesdeNavegador() {
       var datos = JSON.parse(texto);
       if (datos.nodos && Object.keys(datos.nodos).length > 0) {
         red = datos;
+        quitarAccesoriosDesconocidos();
+        marcarOrigenesAntiguos();
         return true;
       }
     }
@@ -489,5 +614,160 @@ function crearRedEjemplo() {
   agregarAccesorio("T1", "SIL", 2.6);
   agregarAccesorio("T6", "CR", 0.7);
   agregarAccesorio("T8", "CR", 0.6);
-  agregarAccesorio("T4", "VAV", 1.2);
+}
+
+
+// ---------------------------------------------------------------------------
+// Funciones de edición que usa el panel lateral
+// ---------------------------------------------------------------------------
+
+// Cambia el largo de un tramo. Como la red es un árbol, al alargar o acortar un
+// tramo se debe mover también todo lo que está aguas abajo de él, es decir, los
+// nodos que cuelgan del nodo b, por lo que se buscan con nodosConectados() y a
+// cada uno se le suma la diferencia de largo en la dirección del tramo.
+function cambiarLargoTramo(idTramo, largoNuevo) {
+  var tramo = red.tramos[idTramo];
+  var direccion = direccionTramo(tramo);
+  var diferencia = largoNuevo - largoTramo(tramo);
+
+  var nodosQueSeMueven = nodosConectados(tramo.b, idTramo);
+  // si dentro de los nodos que se mueven está el equipo significa que el tramo está
+  // dibujado "al revés" respecto al origen, en ese caso no se permite el cambio
+  if (nodosQueSeMueven.indexOf(origenDeNodo(tramo.a)) != -1) {
+    throw new Error("No se puede cambiar el largo de este tramo desde este lado.");
+  }
+
+  for (var i = 0; i < nodosQueSeMueven.length; i++) {
+    var nodo = red.nodos[nodosQueSeMueven[i]];
+    nodo.x = redondear(nodo.x + direccion.x * diferencia);
+    nodo.y = redondear(nodo.y + direccion.y * diferencia);
+    nodo.z = redondear(nodo.z + direccion.z * diferencia);
+  }
+
+  // si el tramo se acortó puede que algún accesorio quede fuera, por lo que se
+  // deja como máximo a 0,1 m del final del tramo
+  var idsAcc = Object.keys(red.accesorios);
+  for (var j = 0; j < idsAcc.length; j++) {
+    var acc = red.accesorios[idsAcc[j]];
+    if (acc.tramo == idTramo && acc.posicion > largoNuevo - 0.1) {
+      acc.posicion = redondear(largoNuevo - 0.1);
+    }
+  }
+}
+
+// Cambia la sección de un tramo (forma y medidas en mm). Los fittings no se
+// modifican aquí, ya que, se vuelven a generar solos al reconstruir la escena.
+function cambiarSeccionTramo(idTramo, seccion) {
+  var tramo = red.tramos[idTramo];
+  tramo.forma = seccion.forma;
+  if (seccion.forma == "rect") {
+    tramo.ancho = seccion.ancho;
+    tramo.alto = seccion.alto;
+  } else {
+    tramo.diametro = seccion.diametro;
+  }
+}
+
+// Quita un accesorio de la red
+function quitarAccesorio(idAccesorio) {
+  delete red.accesorios[idAccesorio];
+}
+
+// Devuelve los accesorios de un tramo ordenados desde el inicio hasta el final del tramo
+function accesoriosDelTramo(idTramo) {
+  var lista = [];
+  var idsAcc = Object.keys(red.accesorios);
+  for (var i = 0; i < idsAcc.length; i++) {
+    if (red.accesorios[idsAcc[i]].tramo == idTramo) {
+      lista.push(red.accesorios[idsAcc[i]]);
+    }
+  }
+  // ordenamiento simple por posición
+  lista.sort(function (a, b) {
+    return a.posicion - b.posicion;
+  });
+  return lista;
+}
+
+// Devuelve los códigos de dirección que ya están ocupados en un nodo
+function direccionesOcupadas(idNodo) {
+  var ocupadas = [];
+  var tramos = tramosDelNodo(idNodo);
+  for (var i = 0; i < tramos.length; i++) {
+    ocupadas.push(codigoDireccion(direccionSaliendo(tramos[i], idNodo)));
+  }
+  return ocupadas;
+}
+
+// Dice qué fitting le corresponde a un nodo según los tramos que llegan a él.
+// Se usa la misma regla de escena.js: 1 tramo es un extremo, 2 tramos en línea
+// recta son una unión (o una reducción o ampliación si cambia la sección), 2 tramos que no están
+// en línea forman un codo y 3 o más tramos forman una derivación.
+function tipoDeNodo(idNodo) {
+  if (red.nodos[idNodo].origen) {
+    return "equipo";
+  }
+  var tramos = tramosDelNodo(idNodo);
+  if (tramos.length == 0) {
+    return "nodo aislado";
+  }
+  if (tramos.length == 1) {
+    return "extremo";
+  }
+  if (tramos.length >= 3) {
+    return "derivación";
+  }
+  var sale1 = direccionSaliendo(tramos[0], idNodo);
+  var sale2 = direccionSaliendo(tramos[1], idNodo);
+  if (sale1.dot(sale2) < -0.99) {
+    if (mismaSeccion(tramos[0], tramos[1])) {
+      return "unión recta";
+    }
+    return "reducción o ampliación";
+  }
+  return "codo";
+}
+
+// Analiza una derivación para saber cuál es el troncal y cuáles son los ramales.
+//  - entrada: el tramo por donde llega el aire, es decir, el que conecta el nodo
+//    con el equipo de su red. Se encuentra buscando desde el otro extremo de cada tramo si se
+//    puede llegar al equipo sin pasar por el mismo tramo.
+//  - recto: el tramo que sigue en línea recta con la entrada (puede no existir).
+//  - ramales: todos los demás tramos, los cuales salen con zapato chino o collarín.
+// Si el nodo es el mismo equipo no hay entrada y se devuelve null.
+function analizarDerivacion(idNodo) {
+  var tramos = tramosDelNodo(idNodo);
+  var raiz = origenDeNodo(idNodo);   // equipo de la red de este nodo
+
+  var entrada = null;
+  for (var i = 0; i < tramos.length; i++) {
+    var otroNodo = tramos[i].a;
+    if (tramos[i].a == idNodo) {
+      otroNodo = tramos[i].b;
+    }
+    var alcanzables = nodosConectados(otroNodo, tramos[i].id);
+    if (alcanzables.indexOf(raiz) != -1) {
+      entrada = tramos[i];
+    }
+  }
+  if (entrada == null) {
+    return null;
+  }
+
+  var saleEntrada = direccionSaliendo(entrada, idNodo);
+  var recto = null;
+  var ramales = [];
+  for (var j = 0; j < tramos.length; j++) {
+    if (tramos[j].id == entrada.id) {
+      continue;
+    }
+    var sale = direccionSaliendo(tramos[j], idNodo);
+    // si sale justo al lado contrario de la entrada es la continuación del troncal
+    if (sale.dot(saleEntrada) < -0.99) {
+      recto = tramos[j];
+    } else {
+      ramales.push(tramos[j]);
+    }
+  }
+  return { entrada: entrada, recto: recto, ramales: ramales };
 }
