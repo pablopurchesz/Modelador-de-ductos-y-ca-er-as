@@ -36,8 +36,8 @@ Los archivos de la carpeta `js` se cargan en ese orden en `index.html`, ya que, 
 
 ## Estado del proyecto
 
-- Evaluación N°3: prototipo con barra de comandos, generación automática de fittings, accesorios y terminales de aire (etiqueta `ev3`).
-- Evaluación N°4: panel lateral de edición, trazado de tramos con el mouse, derivaciones en cualquier punto del tramo con zapato chino o collarín, reducciones y ampliaciones de 30 cm, varias redes independientes con red activa, y equipos de origen (UMA por módulos y caja de ventilación) conectados con junta flexible (etiqueta `ev4`).
+- Evaluación N°3: prototipo con barra de comandos, generación automática de fittings, accesorios y terminales de aire (rama `ev3`).
+- Evaluación N°4: panel lateral de edición, trazado de tramos con el mouse, derivaciones en cualquier punto del tramo con zapato chino o collarín, reducciones y ampliaciones de 30 cm, varias redes independientes con red activa, y equipos de origen (UMA por módulos y caja de ventilación) conectados con junta flexible (rama `ev4`).
 - Entrega final: cálculo de caudal y velocidad por tramo con escala de colores.
 - Etapa siguiente: redes hidráulicas (cañerías) sobre la misma base, con cálculo mediante epanet-js.
 
